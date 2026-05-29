@@ -1,13 +1,13 @@
 import { JobQueue } from "./queue.js";
 import { startProducer } from "./producer.js";
 import { startConsumer } from "./consumer.js";
-import { SandboxRegistry, verifyDocker, buildImage } from "./runner.js";
+import { SandboxRegistry, verifyDocker, buildImages } from "./runner.js";
 import { logger } from "./logger.js";
 
 const log = logger.child({ module: "orchestrator" });
 
 await verifyDocker();
-await buildImage();
+await buildImages();
 
 const queue = new JobQueue();
 const registry = new SandboxRegistry();

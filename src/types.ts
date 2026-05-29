@@ -1,4 +1,6 @@
-export type JobType = "http" | "compute" | "io";
+import type { JobType } from "./sandbox-types.js";
+
+export type { JobType };
 
 export interface Job {
   jobId: string;
