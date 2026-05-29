@@ -63,6 +63,43 @@ export async function stopSandbox(containerId: string): Promise<void> {
   }
 }
 
+interface Pending {
+  resolve: (sb: RunningSandbox) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const pending = new Map<string, Pending>();
+
+export function awaitJobReady(
+  jobId: string,
+  timeoutMs = 30_000,
+): Promise<RunningSandbox> {
+  return new Promise<RunningSandbox>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pending.delete(jobId);
+      reject(new Error(`timed out waiting for job ${jobId}`));
+    }, timeoutMs);
+    pending.set(jobId, { resolve, reject, timer });
+  });
+}
+
+export function notifyJobReady(jobId: string, sb: RunningSandbox): void {
+  const p = pending.get(jobId);
+  if (!p) return;
+  clearTimeout(p.timer);
+  pending.delete(jobId);
+  p.resolve(sb);
+}
+
+export function notifyJobFailed(jobId: string, err: Error): void {
+  const p = pending.get(jobId);
+  if (!p) return;
+  clearTimeout(p.timer);
+  pending.delete(jobId);
+  p.reject(err);
+}
+
 async function findOrphanSandboxes(): Promise<string[]> {
   try {
     const out = (
@@ -80,6 +117,14 @@ export class SandboxRegistry {
 
   add(sb: RunningSandbox): void {
     this.sandboxes.set(sb.jobId, sb);
+  }
+
+  get(jobId: string): RunningSandbox | undefined {
+    return this.sandboxes.get(jobId);
+  }
+
+  remove(jobId: string): void {
+    this.sandboxes.delete(jobId);
   }
 
   list(): RunningSandbox[] {
