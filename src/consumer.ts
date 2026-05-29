@@ -1,6 +1,11 @@
 import type { JobQueue } from "./queue.js";
 import type { Job } from "./types.js";
-import { startHttpSandbox, type SandboxRegistry } from "./runner.js";
+import {
+  startHttpSandbox,
+  notifyJobReady,
+  notifyJobFailed,
+  type SandboxRegistry,
+} from "./runner.js";
 import { logger } from "./logger.js";
 
 const log = logger.child({ module: "consumer" });
@@ -21,8 +26,10 @@ async function processJob(job: Job, registry: SandboxRegistry): Promise<void> {
       },
       "ready",
     );
+    notifyJobReady(job.jobId, sb);
   } catch (err) {
     log.error({ jobId: job.jobId, err }, "failed");
+    notifyJobFailed(job.jobId, err as Error);
   }
 }
 
