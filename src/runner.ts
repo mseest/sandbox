@@ -1,12 +1,10 @@
 import { $ } from "bun";
 import type { Job } from "./types.js";
+import { SANDBOX_TYPES, getSandboxConfig } from "./sandbox-types.js";
 import { logger } from "./logger.js";
 
 const log = logger.child({ module: "runner" });
 
-const IMAGE = "sandbox-runner:latest";
-const BUILD_CONTEXT = "./sandbox";
-const CONTAINER_PORT = 3000;
 const NAME_PREFIX = "sandbox-";
 
 export interface RunningSandbox {
@@ -23,23 +21,39 @@ export async function verifyDocker(): Promise<void> {
   }
 }
 
-export async function buildImage(): Promise<void> {
-  log.info({ image: IMAGE, context: BUILD_CONTEXT }, "building image");
-  await $`docker build -q -t ${IMAGE} ${BUILD_CONTEXT}`.quiet();
+export async function buildImages(): Promise<void> {
+  const seen = new Set<string>();
+  for (const [type, cfg] of Object.entries(SANDBOX_TYPES)) {
+    if (!cfg.build || seen.has(cfg.image)) continue;
+    seen.add(cfg.image);
+    log.info(
+      { type, image: cfg.image, context: cfg.build.context },
+      "building image",
+    );
+    await $`docker build -q -t ${cfg.image} ${cfg.build.context}`.quiet();
+  }
 }
 
-export async function startHttpSandbox(job: Job): Promise<RunningSandbox> {
+export async function startSandbox(job: Job): Promise<RunningSandbox> {
+  const cfg = getSandboxConfig(job.type);
   const name = `${NAME_PREFIX}${job.jobId}`;
-  const portMap = `:${CONTAINER_PORT}`;
-  const jobIdEnv = `JOB_ID=${job.jobId}`;
-  const jobTypeEnv = `JOB_TYPE=${job.type}`;
+  const portMap = `:${cfg.containerPort}`;
+  const envArgs = [
+    "-e",
+    `JOB_ID=${job.jobId}`,
+    "-e",
+    `JOB_TYPE=${job.type}`,
+    ...Object.entries(cfg.env ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
+  ];
+  const extraArgs = cfg.dockerArgs ?? [];
+  const cmd = cfg.cmd ?? [];
 
   const fullId = (
-    await $`docker run -d --rm --name ${name} -p ${portMap} -e ${jobIdEnv} -e ${jobTypeEnv} ${IMAGE}`.text()
+    await $`docker run -d --rm --name ${name} -p ${portMap} ${extraArgs} ${envArgs} ${cfg.image} ${cmd}`.text()
   ).trim();
 
   const portInfo = (
-    await $`docker port ${fullId} ${CONTAINER_PORT}/tcp`.text()
+    await $`docker port ${fullId} ${cfg.containerPort}/tcp`.text()
   ).trim();
   const firstLine = portInfo.split("\n")[0] ?? "";
   const hostPort = firstLine.split(":").pop();
