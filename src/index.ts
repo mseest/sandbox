@@ -1,20 +1,32 @@
 import { JobQueue } from "./queue.js";
 import { startProducer } from "./producer.js";
 import { startConsumer } from "./consumer.js";
+import { SandboxRegistry, verifyDocker, buildImage } from "./runner.js";
+import { logger } from "./logger.js";
+
+const log = logger.child({ module: "orchestrator" });
+
+await verifyDocker();
+await buildImage();
 
 const queue = new JobQueue();
+const registry = new SandboxRegistry();
 
-const stopConsumer = startConsumer(queue);
-const stopProducer = startProducer(queue, 1000);
+const stopConsumer = startConsumer(queue, registry);
+const stopProducer = startProducer(queue, 2000);
 
-console.log("[orchestrator] producer + consumer running. Ctrl+C to stop.");
+log.info("producer + consumer running. Ctrl+C to stop.");
 
-const shutdown = (): void => {
-  console.log("\n[orchestrator] shutting down...");
+let shuttingDown = false;
+const shutdown = async (): Promise<void> => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  log.info("shutting down");
   stopProducer();
   stopConsumer();
+  await registry.cleanup();
   process.exit(0);
 };
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown());
+process.on("SIGTERM", () => void shutdown());
